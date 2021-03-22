@@ -1,0 +1,167 @@
+---
+kind: pipeline
+type: docker
+name: test
+
+steps:
+  - name: make-git-version
+    image: alpine/git
+    commands:
+      - git fetch --tags
+      - git describe --tags --always --dirty="-dev" > .drone/git-version
+
+  - name: build
+    image: maven:3.6.3-openjdk-8-slim
+    volumes:
+      - name: m2
+        path: /usr/share/maven/ref
+    commands:
+      - export GIT_VERSION=$(cat .drone/git-version)
+      - echo $GIT_VERSION
+      - mvn -s ./.drone/maven-settings.xml versions:set -DnewVersion=$GIT_VERSION 
+      - mvn -s ./.drone/maven-settings.xml clean package -P test -Dmaven.test.skip=true -Dmaven.javadoc.skip=true
+
+  - name: publish
+    image: mattdavis90/drone-buildah
+    privileged: true
+    settings:
+      username: 
+        from_secret: harbor_username
+      password: 
+        from_secret: harbor_password
+      # 此处需要针对新项目进行修改 (CHANGE)
+      repo: harbor.ypl.loc/duorou/app-plant
+      tags: latest
+      insecure: true
+
+  - name: deployment
+    image: pelotech/drone-helm3:0.14.2
+    environment:
+      USER:
+        from_secret: harbor_username
+      PASSWORD:
+        from_secret: harbor_password
+      # 此处需要针对新项目进行修改 (CHANGE)
+      SERVICE_NAME: app-plant
+    settings:
+      mode: upgrade
+      chart: harbor/service
+      # 此处需要针对新项目进行修改 (CHANGE)
+      release: app-plant
+      add_repos:
+        - harbor=http://$USER:$PASSWORD@harbor.ypl.loc/chartrepo/duorou
+      namespace: dr-test
+      values:
+        - probe.enable=true
+        - useConfigMap=false
+      string_values:
+        - fullnameOverride=$SERVICE_NAME
+        # 此处需要针对新项目进行修改 (CHANGE)
+        - image.repository=harbor.ypl.loc/duorou/app-plant
+        - image.tag=latest
+        - image.pullPolicy=Always
+        - imagePullSecrets[0].name=devops
+        - ingress.hosts[0].host=test.dr.loc
+        - ingress.hosts[0].paths[0].path=/api/$SERVICE_NAME/\(\.\*\)
+        - ingress.annotations.nginx\.ingress\.kubernetes\.io/auth-url=http://admin-auth.dr-test.svc.cluster.local/auth/check
+        - deployEnv=test
+      skip_tls_verify: true
+      kube_api_server:
+        from_secret: k8s_api_server
+      kube_token:
+        from_secret: k8s_token 
+      debug: true
+      force_upgrade: false
+      atomic_upgrade: true
+
+trigger:
+  branch:
+    - master
+    - drone
+  event:
+    - push
+
+volumes:
+  - name: m2
+    host:
+      path: /var/lib/cache/m2
+
+---
+kind: pipeline
+type: docker
+name: release
+
+steps:
+  - name: build
+    image: maven:3.6.3-openjdk-8-slim
+    volumes:
+      - name: m2
+        path: /usr/share/maven/ref
+    commands:
+      - export GIT_VERSION=${DRONE_TAG}
+      - echo $GIT_VERSION
+      - rm -fr ./src/main/resources/application*
+      - mvn -s ./.drone/maven-settings.xml versions:set -DnewVersion=$GIT_VERSION 
+      - mvn -s ./.drone/maven-settings.xml clean package -P prod -Dmaven.test.skip=true -Dmaven.javadoc.skip=true
+
+  - name: publish
+    image: mattdavis90/drone-buildah
+    privileged: true
+    settings:
+      username: 
+        from_secret: harbor_username
+      password: 
+        from_secret: harbor_password
+      # 此处需要针对新项目进行修改 (CHANGE)
+      repo: harbor.ypl.loc/duorou/app-plant
+      tags: ${DRONE_TAG}
+      insecure: true
+
+  - name: deployment
+    image: pelotech/drone-helm3:0.14.2
+    environment:
+      USER:
+        from_secret: harbor_username
+      PASSWORD:
+        from_secret: harbor_password
+      # 此处需要针对新项目进行修改 (CHANGE)
+      SERVICE_NAME: app-plant
+    settings:
+      mode: upgrade
+      chart: harbor/service
+      # 此处需要针对新项目进行修改 (CHANGE)
+      release: app-plant
+      add_repos:
+        - harbor=http://$USER:$PASSWORD@harbor.ypl.loc/chartrepo/duorou
+      namespace: dr-release
+      values:
+        - probe.enable=true
+        - useConfigMap=true
+      string_values:
+        - fullnameOverride=$SERVICE_NAME
+        # 此处需要针对新项目进行修改 (CHANGE)
+        - image.repository=harbor.ypl.loc/duorou/app-plant
+        - image.tag=${DRONE_TAG}
+        - image.pullPolicy=IfNotPresent
+        - imagePullSecrets[0].name=devops
+        - ingress.hosts[0].host=release.dr.loc
+        - ingress.hosts[0].paths[0].path=/api/$SERVICE_NAME/\(\.\*\)
+        - ingress.annotations.nginx\.ingress\.kubernetes\.io/auth-url=http://admin-auth.dr-release.svc.cluster.local/auth/check
+        - deployEnv=release
+      skip_tls_verify: true
+      kube_api_server:
+        from_secret: k8s_api_server
+      kube_token:
+        from_secret: k8s_token 
+      debug: true
+      force_upgrade: false
+      atomic_upgrade: true
+
+trigger:
+  event:
+    - tag
+
+volumes:
+  - name: m2
+    host:
+      path: /var/lib/cache/m2
