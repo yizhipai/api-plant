@@ -37,7 +37,7 @@ import javax.validation.Valid;
  * @since 2021-03-05
  */
 @RestController
-@Api(tags = "PlantDynamicController", description = "")
+@Api(tags = "PlantDynamicController", description = "植物动态")
 @RequestMapping("/plant/plantDynamic")
 public class PlantDynamicController extends KlbController {
     @Autowired
@@ -45,7 +45,7 @@ public class PlantDynamicController extends KlbController {
     @Autowired
     private IPlantFileService plantFileService;
 
-    @ApiOperation("发布动态")
+    @ApiOperation("发布动态-非首次发布")
     @PostMapping("/add")
     @Transactional
     public R<Boolean> add(@RequestHeader(value = SysConstant.KLB_USER_ID)Long userId, HttpServletRequest request, @RequestParam("files")MultipartFile[] files, @RequestBody @Valid PlantDynamic vo) {

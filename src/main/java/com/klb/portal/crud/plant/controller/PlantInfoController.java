@@ -41,7 +41,7 @@ import javax.validation.Valid;
  * @since 2021-03-05
  */
 @RestController
-@Api(tags = "PlantInfoController", description = "植物动态")
+@Api(tags = "PlantInfoController", description = "植物信息")
 @RequestMapping("/plant/plantInfo")
 public class PlantInfoController extends KlbController {
     @Autowired
@@ -96,7 +96,7 @@ public class PlantInfoController extends KlbController {
         return success(vo);
     }
 
-    @ApiOperation("发布植物")
+    @ApiOperation("发布植物-首次发布动态需要填写植物基本信息")
     @PostMapping("/add")
     @Transactional
     public R<Boolean> add(@RequestHeader(value = SysConstant.KLB_USER_ID)Long userId, HttpServletRequest request, @RequestParam("files")MultipartFile[] files, @RequestBody @Valid PlantAndDynamicVo vo) {
